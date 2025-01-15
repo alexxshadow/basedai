@@ -228,7 +228,7 @@ class cli:
             args (List[str], optional): List of command line arguments.
         """
 
-        print_status_bar()
+        # print_status_bar()
 
         # Turns on console for cli.
         basedai.turn_console_on()

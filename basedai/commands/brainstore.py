@@ -22,10 +22,9 @@
 
 import sys
 import argparse
+import json
 import basedai
 import requests
-from rich.console import Console
-from rich.table import Table
 from typing import Any
 from . import defaults
 
@@ -35,30 +34,13 @@ BRAIN_GIT_URL = "http://basedainet.com:5050/api/v1/orgs"
 
 class BrainStoreListCommand:
     """
-    Executes the ``list`` command to display a list of available Brains on the BasedAI network.
-
-    This command is used to fetch and show detailed information about each brain, which could include various smart contracts or applications available on the network.
-
-    Usage:
-        Users can invoke this command without the need to specify any additional arguments. The command queries the Basedai network or a configured git repository to retrieve and showcase all the available brains in a tabulated format.
-
-    Optional arguments:
-        - There are no optional arguments for this command. It simply lists all available brains.
-
-    The command prompts for confirmation if network interaction is required or presents the queried data directly to the user.
-
-    Example usage::
-
-        basedcli brains list
-
-    Note:
-        This command is essential for users looking to discover and explore the various brains that are part of the Basedai network.
-        It showcases the plethora of available resources and aids in decision-making for potential usage or contributions.
+    Executes the ``list`` command to display a list of available Brains on the BasedAI network,
+    now outputting results in JSON format only.
     """
 
     @staticmethod
     def run(cli: "basedai.cli"):
-        r"""List available Brains to install, mine, or validate."""
+        r"""List available Brains to install, mine, or validate (JSON output)."""
         try:
             config = cli.config.copy()
             basednode: "basedai.basednode" = basedai.basednode(
@@ -72,29 +54,35 @@ class BrainStoreListCommand:
 
     @staticmethod
     def _run(cli: "basedai.cli", basednode: "basedai.basednode"):
-        r"""Retrieves the list of Brains from the git host and displays them in order of amount staked."""
+        """
+        Retrieves the list of Brains from the git host and prints JSON data.
+        """
         config = cli.config.copy()
         response = requests.get(f"{BRAIN_GIT_URL}/brains/repos")
+
         if response.status_code == 200:
             brains_list = response.json()
-            table = Table(show_header=True, header_style="bold cyan", border_style="white")
-            table.add_column("Name")
-            table.add_column("Description")
-            table.add_column("Token Address")
-            table.add_column("Updated")
-            table.add_column("URL")
+
+            # Build a JSON-compatible list of brains
+            brains_data = []
             for brain in brains_list:
-                table.add_row(
-                    brain["name"],
-                    brain["description"],
-                    "0x0000000000000000000000000000000000",
-                    brain["updated_at"],
-                    brain["html_url"]
-                )
-                table.add_row("")
-            basedai.__console__.print(table)
+                brains_data.append({
+                    "name": brain["name"],
+                    "description": brain["description"],
+                    "token_address": "0x0000000000000000000000000000000000",
+                    "updated": brain["updated_at"],
+                    "url": brain["html_url"]
+                })
+
+            # Print the JSON output
+            print(json.dumps(brains_data, indent=2))
         else:
-            basedai.__console__.print(f"[bold red]Failed[/bold red] to fetch brains list")
+            # Print an error message in JSON format
+            error_data = {
+                "error": "Failed to fetch brains list",
+                "status_code": response.status_code
+            }
+            print(json.dumps(error_data, indent=2))
 
     @staticmethod
     def add_args(parser: argparse.ArgumentParser):
@@ -106,6 +94,7 @@ class BrainStoreListCommand:
     @staticmethod
     def check_config(config: "basedai.config"):
         pass
+
 
 #class BrainsSubmitCommand:
 #    """Class for submitting brained repositories"""

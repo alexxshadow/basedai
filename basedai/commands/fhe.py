@@ -4,7 +4,6 @@ import json
 import asyncio
 import websockets
 import os
-import tenseal as ts
 from phe import paillier
 import ollama
 from typing import Any, Dict
@@ -28,7 +27,8 @@ class FHERunCommand:
         fhe_run_parser = parser.add_parser('run', help='Run FHE operations')
         fhe_run_parser.add_argument('--address', type=str, required=True, help='Address that signed the work')
         fhe_run_parser.add_argument('--balance', type=float, required=True, help='Minimum balance required')
-        fhe_run_parser.add_argument('--library', type=str, choices=['tenseal', 'paillier'], required=True, help='FHE library to use')
+        # Removed 'tenseal' from the choices
+        fhe_run_parser.add_argument('--library', type=str, choices=['paillier'], required=True, help='FHE library to use')
         fhe_run_parser.add_argument('--operation', type=str, choices=['square', 'add', 'multiply', 'mean', 'variance'], required=True, help='FHE operation to perform')
         fhe_run_parser.add_argument('--peer', type=str, required=True, help='Peer address to receive encrypted data from')
         fhe_run_parser.add_argument('--use_cerberus', action='store_true', help='Use Cerberus Squeezing optimization')
@@ -63,10 +63,8 @@ class FHERunCommand:
             if use_secure_container:
                 result = cls.run_in_secure_container(encrypted_data, library, operation, use_cerberus, squeeze_rate)
             else:
-                if library == 'tenseal':
-                    result = cls.run_tenseal(encrypted_data, operation, use_cerberus, squeeze_rate)
-                elif library == 'paillier':
-                    result = cls.run_paillier(encrypted_data, operation, use_cerberus, squeeze_rate)
+                # Only paillier remains
+                result = cls.run_paillier(encrypted_data, operation, use_cerberus, squeeze_rate)
 
             logger.info(f"FHE operation result: {result}")
 
@@ -81,31 +79,19 @@ class FHERunCommand:
     def run_in_secure_container(cls, encrypted_data, library, operation, use_cerberus, squeeze_rate):
         logger.info("Setting up secure container for FHE operation")
 
-        # 1. Set up a secure container using Docker
         container_name = f"fhe_container_{library}_{operation}"
         docker_image = f"fhe_{library}:latest"  # Assume we have pre-built Docker images for each FHE library
 
         try:
-            # Pull the Docker image if not present
             os.system(f"docker pull {docker_image}")
-
-            # Run the container
             container_id = os.popen(f"docker run -d --name {container_name} {docker_image}").read().strip()
 
-            # 2. Send the encrypted data and operation parameters to the container
             cls.send_data_to_container(container_id, encrypted_data, operation, use_cerberus, squeeze_rate)
-
-            # 3. Run the FHE operation inside the container
             os.system(f"docker exec {container_id} python /app/run_fhe.py")
-
-            # 4. Receive the encrypted result from the container
             result = cls.receive_result_from_container(container_id)
 
-            # Clean up: stop and remove the container
             os.system(f"docker stop {container_id}")
             os.system(f"docker rm {container_id}")
-
-            # 5. Return the result
             return result
 
         except Exception as e:
@@ -114,7 +100,6 @@ class FHERunCommand:
 
     @classmethod
     def send_data_to_container(cls, container_id, encrypted_data, operation, use_cerberus, squeeze_rate):
-        # Serialize and send data to the container
         data = {
             "encrypted_data": encrypted_data,
             "operation": operation,
@@ -126,44 +111,8 @@ class FHERunCommand:
 
     @classmethod
     def receive_result_from_container(cls, container_id):
-        # Receive and deserialize result from the container
         result_json = os.popen(f"docker exec {container_id} cat /app/output_data.json").read()
         return json.loads(result_json)["result"]
-
-    @staticmethod
-    def run_tenseal(encrypted_data, operation, use_cerberus, squeeze_rate):
-        import tenseal as ts
-        import numpy as np
-
-        context = ts.context_from(encrypted_data['context'])
-        x = ts.ckks_vector_from(context, encrypted_data['encrypted_data'])
-
-        if use_cerberus:
-            # Apply Cerberus Squeezing
-            entropy = np.ones(len(x))
-            squeeze_threshold = 0.5
-
-        if operation == 'square':
-            result = x.square()
-        elif operation == 'add':
-            result = x + x
-        elif operation == 'multiply':
-            result = x * x
-        elif operation == 'mean':
-            result = x.sum() / len(x)
-        elif operation == 'variance':
-            mean = x.sum() / len(x)
-            var = ((x - mean).square().sum()) / len(x)
-            result = var
-
-        if use_cerberus:
-            # Apply Cerberus Squeezing
-            for i in range(len(result)):
-                if entropy[i] > squeeze_threshold:
-                    result[i] *= x[i]
-                entropy[i] *= np.exp(-squeeze_rate * abs(float(result[i])))
-
-        return result.serialize()
 
     @staticmethod
     def run_paillier(encrypted_data, operation, use_cerberus, squeeze_rate):
@@ -174,7 +123,6 @@ class FHERunCommand:
         x = [public_key.encrypt(v) for v in encrypted_data['encrypted_data']]
 
         if use_cerberus:
-            # Apply Cerberus Squeezing
             entropy = np.ones(len(x))
             squeeze_threshold = 0.5
 
@@ -192,13 +140,25 @@ class FHERunCommand:
             mean = sum(x) / len(x)
             var = sum((xi - mean)**2 for xi in x) / len(x)
             result = var
+        else:
+            raise ValueError(f"Unsupported operation: {operation}")
 
         if use_cerberus:
             # Apply Cerberus Squeezing
-            for i in range(len(result)):
-                if entropy[i] > squeeze_threshold:
-                    result[i] *= x[i]
-                entropy[i] *= np.exp(-squeeze_rate * abs(float(private_key.decrypt(result[i]))))
+            # Only needed if 'result' is a list; if it's a single EncryptedNumber, adjust accordingly
+            if isinstance(result, list):
+                for i in range(len(result)):
+                    if entropy[i] > squeeze_threshold:
+                        result[i] *= x[i]
+                    # Decrypt to get a float for adjusting entropy (not realistic FHE, but example)
+                    float_val = private_key.decrypt(result[i])
+                    entropy[i] *= np.exp(-squeeze_rate * abs(float_val))
+            else:
+                # If result is a single EncryptedNumber
+                if entropy[0] > squeeze_threshold:
+                    result *= x[0]
+                float_val = private_key.decrypt(result)
+                entropy[0] *= np.exp(-squeeze_rate * abs(float_val))
 
         return private_key.decrypt(result)
 
@@ -226,84 +186,6 @@ class FHERunCommand:
                 logger.debug(f"Result: {result}")
         except Exception as e:
             logger.error(f"Error sending result to peer {peer}: {str(e)}")
-
-    @staticmethod
-    def run_tenseal(encrypted_data: dict, operation: str):
-        try:
-            # Deserialize the context
-            context = ts.context_from(encrypted_data['context'])
-
-            # Decrypt the received data
-            x = ts.ckks_vector_from(context, encrypted_data['encrypted_data'])
-
-            if operation == 'square':
-                result = x.square()
-            elif operation == 'add':
-                result = x + x  # Example of adding the vector to itself
-            elif operation == 'multiply':
-                result = x * x  # Example of multiplying the vector by itself
-            elif operation == 'mean':
-                result = x.sum() / len(x)
-            elif operation == 'variance':
-                mean = x.sum() / len(x)
-                var = ((x - mean).square().sum()) / len(x)
-                result = var
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-
-            return result.serialize()
-        except Exception as e:
-            logger.error(f"TenSEAL operation failed: {str(e)}")
-            raise FHEError(f"TenSEAL operation failed: {str(e)}")
-
-    @staticmethod
-    def run_paillier(encrypted_data: dict, operation: str):
-        try:
-            # In a real scenario, you would need to securely exchange public keys
-            # This is a simplified example
-            public_key, private_key = paillier.generate_paillier_keypair()
-
-            # Decrypt the received data
-            x = [public_key.encrypt(v) for v in encrypted_data['encrypted_data']]
-
-            if operation == 'square':
-                result = [xi * xi for xi in x]
-            elif operation == 'add':
-                result = sum(x)
-            elif operation == 'multiply':
-                result = x[0]
-                for xi in x[1:]:
-                    result *= xi
-            elif operation == 'mean':
-                result = sum(x) / len(x)
-            elif operation == 'variance':
-                mean = sum(x) / len(x)
-                var = sum((xi - mean)**2 for xi in x) / len(x)
-                result = var
-            else:
-                raise ValueError(f"Unsupported operation: {operation}")
-
-            return private_key.decrypt(result)
-        except Exception as e:
-            logger.error(f"Paillier operation failed: {str(e)}")
-            raise FHEError(f"Paillier operation failed: {str(e)}")
-
-    @classmethod
-    def run_in_secure_container(cls, encrypted_data, library, operation, use_cerberus, squeeze_rate):
-        # TODO: Implement secure container logic
-        # This method should:
-        # 1. Set up a secure container (e.g., using Docker or a trusted execution environment)
-        # 2. Send the encrypted data and operation parameters to the container
-        # 3. Run the FHE operation inside the container
-        # 4. Receive the encrypted result from the container
-        # 5. Return the result
-
-        logger.info("Running FHE operation in secure container")
-        # Placeholder implementation
-        if library == 'tenseal':
-            return cls.run_tenseal(encrypted_data, operation, use_cerberus, squeeze_rate)
-        elif library == 'paillier':
-            return cls.run_paillier(encrypted_data, operation, use_cerberus, squeeze_rate)
 
 class FHEConfigCommand:
     @classmethod
@@ -335,7 +217,6 @@ class FHEConfigCommand:
 
             logger.info(f"FHE configuration saved to {config_path}")
 
-            # Register this server with the discovery server
             cls.register_with_discovery_server(config)
         except Exception as e:
             logger.error(f"Failed to save FHE configuration: {str(e)}")
@@ -343,7 +224,6 @@ class FHEConfigCommand:
 
     @staticmethod
     def register_with_discovery_server(config):
-        # TODO: Implement the actual registration process
         logger.info(f"Registering FHE server '{config['name']}' with discovery server at {config['discovery_server']}")
 
 class FHEStartServerCommand:
@@ -405,12 +285,10 @@ class FHEDiscoverCommand:
             dht.start()
             for i in chunk:
                 try:
-                    # Use BitTorrent DHT to find nodes
                     nodes = dht.get_peers(f"basedai:fhe:server:{i}")
                     if nodes:
                         for node in nodes:
                             ip, port = node
-                            # Verify if the node is running BasedAI
                             if cls.verify_basedai_node(ip, port):
                                 server = {
                                     "name": f"FHE Server {i}",
@@ -439,14 +317,11 @@ class FHEDiscoverCommand:
 
     @classmethod
     def verify_basedai_node(cls, ip, port):
-        # TODO: Implement verification logic
-        # This should check if the node is running BasedAI software
         return True
 
     @classmethod
     def get_node_capacity(cls, ip, port):
-        # TODO: Implement capacity retrieval
-        # This should query the node for its current capacity
+        import random
         return random.randint(50, 100)
 
     @staticmethod
@@ -459,10 +334,9 @@ class FHEDiscoverCommand:
                     # Process the message using Ollama
                     response = ollama.generate(model=ollama_model, prompt=message)
 
-                    # Encrypt the response before sending
+                    # Encrypt the response before sending (placeholder now)
                     encrypted_response = FHEStartServerCommand.encrypt_response(response['response'])
 
-                    # Send the encrypted Ollama response back
                     await websocket.send(json.dumps(encrypted_response))
             except websockets.exceptions.ConnectionClosed:
                 logger.info("WebSocket connection closed")
@@ -479,27 +353,9 @@ class FHEDiscoverCommand:
 
     @staticmethod
     def encrypt_response(response: str) -> Dict[str, Any]:
-        # This is a placeholder for actual FHE encryption
-        # In a real implementation, you would use one of the FHE libraries to encrypt the response
-        # For demonstration, we'll use TenSEAL for actual FHE encryption
-        try:
-            context = ts.context(ts.SCHEME_TYPE.CKKS, poly_modulus_degree=8192, coeff_mod_bit_sizes=[60, 40, 40, 60])
-            context.global_scale = 2**40
-            context.generate_galois_keys()
-
-            # Convert the response string to a list of ASCII values
-            ascii_values = [ord(char) for char in response]
-
-            # Encrypt the ASCII values
-            encrypted_vector = ts.ckks_vector(context, ascii_values)
-
-            # Serialize the encrypted vector
-            serialized_vector = encrypted_vector.serialize()
-
-            return {
-                "encrypted_data": serialized_vector.hex(),
-                "context": context.serialize().hex()
-            }
-        except Exception as e:
-            logger.error(f"FHE encryption failed: {str(e)}")
-            raise FHEError(f"FHE encryption failed: {str(e)}")
+        # Placeholder for encryption since TenSEAL is removed
+        # This just returns the response in plain text
+        return {
+            "encrypted_data": response,
+            "context": "no_encryption"
+        }

@@ -1,25 +1,5 @@
 import json
-import numpy as np
-
-def run_tenseal_operation(operation, data):
-    import tenseal as ts
-    
-    # Deserialize the context and vector
-    context = ts.context_from(data['context'])
-    vector = ts.ckks_vector_from(context, data['vector'])
-    
-    if operation == 'square':
-        result = vector.square()
-    elif operation == 'add':
-        result = vector + vector
-    elif operation == 'multiply':
-        result = vector * vector
-    elif operation == 'mean':
-        result = vector.sum() / len(vector)
-    else:
-        raise ValueError(f"Unsupported operation: {operation}")
-    
-    return result.serialize()
+import numpy as np  # If you don't need NumPy, you can remove this import
 
 def run_paillier_operation(operation, data):
     from phe import paillier
@@ -49,9 +29,7 @@ if __name__ == "__main__":
     operation = input_data['operation']
     data = input_data['data']
     
-    if library == 'tenseal':
-        result = run_tenseal_operation(operation, data)
-    elif library == 'paillier':
+    if library == 'paillier':
         result = run_paillier_operation(operation, data)
     else:
         raise ValueError(f"Unsupported library: {library}")
