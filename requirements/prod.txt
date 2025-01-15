@@ -32,7 +32,7 @@ torch>=1.13.1
 tqdm
 uvicorn==0.22.0
 wheel
-tenseal
+# tenseal
 phe
 ollama
 websockets

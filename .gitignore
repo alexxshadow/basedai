@@ -2,3 +2,6 @@
 .aider*
 build
 basedai.egg-info
+venv/
+*.pyc
+__pycache__/

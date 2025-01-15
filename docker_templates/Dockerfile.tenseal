@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install TenSEAL and other Python dependencies
-RUN pip install --no-cache-dir tenseal numpy
+RUN pip install --no-cache-dir numpy
 
 # Copy the FHE operation script
 COPY run_fhe.py .
