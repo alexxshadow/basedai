@@ -1,17 +1,17 @@
 aiohttp==3.9.0
-ansible==6.7.0
-ansible_vault==2.1.0
+# ansible==6.7.0
+# ansible_vault==2.1.0
 backoff
 black==23.7.0
-cryptography==41.0.3
+# cryptography==41.0.3
 ddt==1.6.0
 fuzzywuzzy>=0.18.0
-fastapi==0.99.1
+# fastapi==0.99.1
 loguru==0.7.0
 munch==2.5.0
 netaddr
 numpy
-msgpack-numpy-opentensor==0.5.0
+# msgpack-numpy-opentensor==0.5.0
 nest_asyncio
 pycryptodome>=3.18.0,<4.0.0
 pyyaml
@@ -28,11 +28,11 @@ scalecodec==1.2.7
 shtab==1.6.5
 substrate-interface==1.5.2
 termcolor
-torch>=1.13.1
+# torch>=1.13.1
 tqdm
-uvicorn==0.22.0
+# uvicorn==0.22.0
 wheel
 # tenseal
-phe
-ollama
+# phe
+# ollama
 websockets
